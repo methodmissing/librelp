@@ -38,6 +38,7 @@
 #include <string.h>
 #include <errno.h>
 #include <time.h>
+#include <sys/time.h>
 #include "relp.h"
 #include "relpsess.h"
 #include "relpframe.h"
@@ -454,8 +455,13 @@ relpSessWaitState(relpSess_t *pThis, relpSessState_t stateExpected, int timeout)
 	fd_set readfds;
 	int sock;
 	int nfds;
+#ifdef CLOCK_MONOTONIC
 	struct timespec tCurr; /* current time */
 	struct timespec tTimeout; /* absolute timeout value */
+#else
+	struct timeval tCurr; /* current time */
+	struct timeval tTimeout; /* absolute timeout value */
+#endif
 	struct timeval tvSelect;
 	relpRetVal localRet;
 
@@ -479,14 +485,23 @@ relpSessWaitState(relpSess_t *pThis, relpSessState_t stateExpected, int timeout)
 	}
 
 	/* ok, looks like we actually need to do a wait... */
+#ifdef CLOCK_MONOTONIC
 	clock_gettime(CLOCK_REALTIME, &tCurr);
 	memcpy(&tTimeout, &tCurr, sizeof(struct timespec));
+#else
+	gettimeofday(&tCurr, NULL);
+	memcpy(&tTimeout, &tCurr, sizeof(struct timeval));
+#endif
 	tTimeout.tv_sec += timeout;
 
 	while(1) {
 		sock = relpSessGetSock(pThis);
 		tvSelect.tv_sec = tTimeout.tv_sec - tCurr.tv_sec;
+#ifdef CLOCK_MONOTONIC
 		tvSelect.tv_usec = (tTimeout.tv_nsec - tCurr.tv_nsec) / 1000000;
+#else
+		tvSelect.tv_usec = (tTimeout.tv_usec - tCurr.tv_usec) / 1000;
+#endif
 		if(tvSelect.tv_usec < 0) {
 			tvSelect.tv_usec += 1000000;
 			tvSelect.tv_sec--;
@@ -507,7 +522,11 @@ pThis->pEngine->dbgprint("iRet after relpSessRcvData %d\n", iRet);
 			FINALIZE;
 		}
 
+#ifdef CLOCK_MONOTONIC
 		clock_gettime(CLOCK_REALTIME, &tCurr);
+#else
+		gettimeofday(&tCurr, NULL);
+#endif
 	}
 
 finalize_it:
